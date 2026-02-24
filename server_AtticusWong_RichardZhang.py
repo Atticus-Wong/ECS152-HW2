@@ -13,7 +13,6 @@ if __name__ == '__main__':
     while True:
         # accepts from the proxy
         (clientsocket, address) = s.accept()
-        print ("connection found!")
         data = clientsocket.recv(1024).decode()
         ans = ""
 

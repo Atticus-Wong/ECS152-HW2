@@ -1,5 +1,6 @@
 import socket
 import sys
+import json
 
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 8005
@@ -29,15 +30,14 @@ if __name__ == '__main__':
         "message": m
     }
 
-
-
+    json_data = json.dumps(data)
     s.connect((SERVER_HOST, PROXY_SERVER_PORT))
-    s.sendall(data["message"].encode('utf-8'))
+    s.sendall(json_data.encode('utf-8'))
     print("Sent:", data["message"])
 
     # receive response from the proxy
-    proxy_message = s.recv(1024).decode()
-    print(proxy_message)
+    final_message = s.recv(1024).decode()
+    print(final_message)
 
 
 
