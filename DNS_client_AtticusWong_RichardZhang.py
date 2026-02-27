@@ -25,13 +25,14 @@ ROOT_SERVERS = [
     "198.41.0.4",
     "170.247.170.2",
     "192.33.4.12",
+    "8.8.8.8"
 
 
 ]
 
 DNS_SERVER_PORT = 53
-
 PACKET_SIZE = 4096
+HTTP_PORT = 80
 
 #def send_dns(ip)
 
@@ -78,6 +79,13 @@ def solve(domain):
     response, client = sock.recvfrom(PACKET_SIZE)
     transaction_id, flags, question_count, answer_count, authority_count, additional_rr_count = struct.unpack("!HHHHHH", response[:12])
 
+
+    #sock.sendto(packet, ("8.8.8.8", DNS_SERVER_PORT))
+    #recursive_response, client = sock.recvfrom(PACKET_SIZE)
+    #print(recursive_response)
+
+
+
     offset = 12
     q_section_len = len(q_name) + 4
 
@@ -97,32 +105,57 @@ def solve(domain):
         rdlength = response[offset:offset + 2]
         value = struct.unpack("!H", rdlength)[0]
         offset += 2 + value
-    
-    ip = []
-    for i in range(2):
-        byte = response[offset]
-        upper_half = byte & 0xF0
-        lower_half = byte & 0x0F
-        ip.append(upper_half)
-        ip.append(lower_half)
-        offset += 1
-    
-    #print(ip)
-    ip_string = ".".join(str(i) for i in ip)
 
 
+    ip_string = ""
+    for i in range(additional_rr_count):
+        if response[offset] == 192:
+            #Compressed
+            offset += 2
+        else:
+            #not compressed
+            pass
+
+        r_type = response[offset:offset+2]
+        offset += 2 #TYPE
+        offset += 2 #CLASS
+        offset += 4 #TTL
+
+        rdlength = response[offset:offset + 2]
+        offset += 2 #RDLENGTH
+
+        if (struct.unpack("!H", r_type)[0]) == 1:
+            #rdata contains an A record
+            ip_bytes = response[offset:offset+4]
+            ip_string = ".".join(str(i) for i in ip_bytes)
+            break
+    
+    
+    #print(f"TLD IP: {ip_string}")
+    
+
+
+    """
+    offset += 8
+    rdlength = response[offset:offset + 2]
+    value = struct.unpack("!H", rdlength)[0]
+    offset += value
+
+
+    
+    ip_bytes = response[offset:offset+4]
+    ip_string = ".".join(str(i) for i in ip_bytes)
+    print(ip_string)
+
+    """
 
     #-------------TLD-----------
 
-    print(ip_string)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(10.0)
     sock.sendto(packet, (ip_string, DNS_SERVER_PORT))
     response, client = sock.recvfrom(PACKET_SIZE)
-    #print(response)
 
-    """
-    response, client = sock.recvfrom(PACKET_SIZE)
     transaction_id, flags, question_count, answer_count, authority_count, additional_rr_count = struct.unpack("!HHHHHH", response[:12])
 
     offset = 12
@@ -145,21 +178,89 @@ def solve(domain):
         value = struct.unpack("!H", rdlength)[0]
         offset += 2 + value
     
-    ip = []
-    for i in range(2):
-        byte = response[offset]
-        upper_half = byte & 0xF0
-        lower_half = byte & 0x0F
-        ip.append(upper_half)
-        ip.append(lower_half)
-        offset += 1
+    ip_string = ""
+    for i in range(additional_rr_count):
+        if response[offset] == 192:
+            #Compressed
+            offset += 2
+        else:
+            #not compressed
+            pass
+
+        r_type = response[offset:offset+2]
+        offset += 2 #TYPE
+        offset += 2 #CLASS
+        offset += 4 #TTL
+
+        rdlength = response[offset:offset + 2]
+        offset += 2 #RDLENGTH
+
+        if (struct.unpack("!H", r_type)[0]) == 1:
+            #rdata contains an A record
+            ip_bytes = response[offset:offset+4]
+            ip_string = ".".join(str(i) for i in ip_bytes)
+            break
     
-    print(ip)
-    ip_string = ".".join(str(i) for i in ip)
+    #print(f"AUTHORITATIVE IP: {ip_string}")
+
+
+
+    #-------------AUTHORITATIVE-----------
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(10.0)
+    sock.sendto(packet, (ip_string, DNS_SERVER_PORT))
+    response, client = sock.recvfrom(PACKET_SIZE)
+
+    
+    transaction_id, flags, question_count, answer_count, authority_count, additional_rr_count = struct.unpack("!HHHHHH", response[:12])
+
+    offset = 12
+    q_section_len = len(q_name) + 4
+
+    offset = q_section_len + offset
+    #print(answer_count)
+
+    ip_string = ""
+    if response[offset] == 192:
+        #Compressed
+        offset += 2
+    else:
+        #not compressed
+        pass
+
+    r_type = response[offset:offset+2]
+    offset += 2 #TYPE
+    offset += 2 #CLASS
+    offset += 4 #TTL
+
+    rdlength = response[offset:offset + 2]
+    offset += 2 #RDLENGTH
+
+    if (struct.unpack("!H", r_type)[0]) == 1:
+        #rdata contains an A record
+        ip_bytes = response[offset:offset+4]
+        ip_string = ".".join(str(i) for i in ip_bytes)
+    
     print(ip_string)
 
     """
-    
+    Create an HTTP request to the domain using the resolved IP address: Use the connect(),
+    sendall(), and recv() methods for this TCP connection and create your own HTTP request
+    using socket library again. Measure and report the RTT For this interaction as well.
+    """
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(10.0)
+    sock.connect((ip_string, HTTP_PORT))
+
+    request = f"GET / HTTP/1.1\r\nHost: {domain}\r\nConnection: close\r\n\r\n"
+    sock.sendall(request.encode())
+    response, client = sock.recvfrom(PACKET_SIZE)
+
+    print(response)
+
+
 
     """
     [ 12-byte HEADER ]
@@ -186,7 +287,18 @@ def solve(domain):
         RDATA       variable length (RDLENGTH bytes)
     
     ]
-    [ ADDITIONAL section ]
+    [ ADDITIONAL section 
+        DNS resource records:
+        NAME        (variable, can be compressed)
+            11000000 = 192 = NAME is always 2 bytes
+
+        TYPE        2 bytes
+        CLASS       2 bytes
+        TTL         4 bytes
+        RDLENGTH    2 bytes 
+            The length of RDATA
+        RDATA       variable length (RDLENGTH bytes)
+    ]
     """
 
     #print(transaction_id)
