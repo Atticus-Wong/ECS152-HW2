@@ -30,6 +30,15 @@ if __name__ == '__main__':
         raw_data = clientsocket.recv(1024).decode()
         data = json.loads(raw_data)
 
+        print("----------------------------")
+        print("Received from client:") 
+        print("----------------------------")
+        print("data = {")
+        print(f"\"server_ip\": \"{data['server_ip']}\"")
+        print(f"\"server_port\": \"{data['server_port']}\"")
+        print(f"\"message\": \"{data['message']}\"")
+        print("}")
+
         # logic for the ip blocklist here
         
         if f"{data['server_ip']}" in blocklist:
@@ -40,9 +49,21 @@ if __name__ == '__main__':
 
             server.connect((SERVER_HOST, SERVER_PORT))
             server.sendall(data["message"].encode('utf-8'))
+            print("----------------------------")
+            print("Sent to server:") 
+            print("----------------------------")
+            print(f"\"{data['message']}\"")
 
             # receive data from server
             new_data = server.recv(1024).decode()
-            print(f"{new_data}")
+            print("----------------------------")
+            print("Received from server:") 
+            print("----------------------------")
+            print(f"\"{new_data}\"")
 
             clientsocket.sendall(new_data.encode('utf-8'))
+
+            print("----------------------------")
+            print("Sent to client:") 
+            print("----------------------------")
+            print(f"\"{new_data}\"")

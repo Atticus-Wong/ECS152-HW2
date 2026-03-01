@@ -33,10 +33,20 @@ if __name__ == '__main__':
     json_data = json.dumps(data)
     s.connect((SERVER_HOST, PROXY_SERVER_PORT))
     s.sendall(json_data.encode('utf-8'))
-    print("Sent:", data["message"])
+    print("----------------------------")
+    print("Sent to proxy:") 
+    print("----------------------------")
+    print("data = {")
+    print(f"\"server_ip\": \"{data['server_ip']}\"")
+    print(f"\"server_port\": \"{data['server_port']}\"")
+    print(f"\"message\": \"{data['message']}\"")
+    print("}")
 
     # receive response from the proxy
     final_message = s.recv(1024).decode()
+    print("----------------------------")
+    print("Received from proxy:") 
+    print("----------------------------")
     print(final_message)
 
 
