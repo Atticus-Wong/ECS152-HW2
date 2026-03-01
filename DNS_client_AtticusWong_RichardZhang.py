@@ -15,8 +15,6 @@ l.root-servers.net	199.7.83.42, 2001:500:9f::42	ICANN
 m.root-servers.net	202.12.27.33, 2001:dc3::35	WIDE Project
 """
 
-# https://www.geeksforgeeks.org/computer-networks/dns-message-format/
-
 import socket
 import sys
 import struct
@@ -25,21 +23,22 @@ ROOT_SERVERS = [
     "198.41.0.4",
     "170.247.170.2",
     "192.33.4.12",
-    "8.8.8.8"
-
-
+    "199.7.91.13",
+    "192.203.230.10"
 ]
 
 DNS_SERVER_PORT = 53
 PACKET_SIZE = 4096
 HTTP_PORT = 80
+R_TYPE_VAL_TO_NAME = {
+    1: "A",
+    2: "NS",
+    5: "CNAME",
+    28: "AAAA"
+}
 
-#def send_dns(ip)
 
-def solve(domain):
-    """
-    Build the DNS request payload using struct.pack
-    """
+def build_dns_packet(domain):
     transaction_id = 0xFFFF
     flags = 0x0000
     question_count = 0x0001
@@ -47,14 +46,6 @@ def solve(domain):
     authority_count = 0x0000
     additional_rr_count = 0x0000
     header = struct.pack("!HHHHHH", transaction_id, flags, question_count, answer_count, authority_count, additional_rr_count)
-
-    """
-    Build question section 
-
-    For wikipedia.org
-    q_name should be "9 wikipedia 3 org 0"
-    """
-
     
     words = domain.split('.')
     q_name = b""
@@ -68,196 +59,114 @@ def solve(domain):
     question = q_name + struct.pack("!HH", q_type, q_class)
 
     packet = header + question
+    return packet, q_name
 
-    """
-    Send packet to the root server
-    """
+def send_dns_packet(packet, dns_ip):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(10.0)
-    sock.sendto(packet, (ROOT_SERVERS[0], DNS_SERVER_PORT))
+    sock.sendto(packet, (dns_ip, DNS_SERVER_PORT))
 
     response, client = sock.recvfrom(PACKET_SIZE)
-    transaction_id, flags, question_count, answer_count, authority_count, additional_rr_count = struct.unpack("!HHHHHH", response[:12])
+    return response
 
-
-    #sock.sendto(packet, ("8.8.8.8", DNS_SERVER_PORT))
-    #recursive_response, client = sock.recvfrom(PACKET_SIZE)
-    #print(recursive_response)
-
-
-
-    offset = 12
-    q_section_len = len(q_name) + 4
-
-    offset = q_section_len + offset
-    #print(additional_rr_count)
-
-    #response[offset]
-
-    for i in range(authority_count):
-        if response[offset] == 192:
-            #Compressed
-            offset += 2
-        else:
-            #not compressed
-            pass
-        offset += 8
-        rdlength = response[offset:offset + 2]
-        value = struct.unpack("!H", rdlength)[0]
-        offset += 2 + value
-
-
+def parse_dns_records(response, offset, count):
+    records = []
     ip_string = ""
-    for i in range(additional_rr_count):
-        if response[offset] == 192:
-            #Compressed
+    for i in range(count):
+        if response[offset] >= 192:
             offset += 2
         else:
-            #not compressed
-            pass
+            while response[offset] != 0:
+                offset += 1
+            offset += 1
 
         r_type = response[offset:offset+2]
+        r_type_val = struct.unpack("!H", r_type)[0]
         offset += 2 #TYPE
         offset += 2 #CLASS
         offset += 4 #TTL
 
         rdlength = response[offset:offset + 2]
+        rdlength_val = struct.unpack("!H", rdlength)[0]
         offset += 2 #RDLENGTH
 
-        if (struct.unpack("!H", r_type)[0]) == 1:
+        """
+        A (1), NS (2), CNAME (5), SOA (6), PTR (12), MX (15), AAAA (28), SRV (33), and TXT (16)
+        """
+
+        r_data = None
+        #Need to advance offset in each case too *
+        if r_type_val == 1:
             #rdata contains an A record
             ip_bytes = response[offset:offset+4]
             ip_string = ".".join(str(i) for i in ip_bytes)
+            r_data = ip_string
+            offset += rdlength_val
             break
-    
-    
-    #print(f"TLD IP: {ip_string}")
-    
-
-
-    """
-    offset += 8
-    rdlength = response[offset:offset + 2]
-    value = struct.unpack("!H", rdlength)[0]
-    offset += value
-
-
-    
-    ip_bytes = response[offset:offset+4]
-    ip_string = ".".join(str(i) for i in ip_bytes)
-    print(ip_string)
-
-    """
-
-    #-------------TLD-----------
-
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.settimeout(10.0)
-    sock.sendto(packet, (ip_string, DNS_SERVER_PORT))
-    response, client = sock.recvfrom(PACKET_SIZE)
-
-    transaction_id, flags, question_count, answer_count, authority_count, additional_rr_count = struct.unpack("!HHHHHH", response[:12])
-
-    offset = 12
-    q_section_len = len(q_name) + 4
-
-    offset = q_section_len + offset
-    #print(additional_rr_count)
-
-    #response[offset]
-
-    for i in range(authority_count):
-        if response[offset] == 192:
-            #Compressed
-            offset += 2
         else:
-            #not compressed
-            pass
-        offset += 8
-        rdlength = response[offset:offset + 2]
-        value = struct.unpack("!H", rdlength)[0]
-        offset += 2 + value
+            offset += rdlength_val
+        
+        #records.append(R_TYPE_VAL_TO_NAME[r_type_val], )
     
-    ip_string = ""
-    for i in range(additional_rr_count):
-        if response[offset] == 192:
-            #Compressed
-            offset += 2
-        else:
-            #not compressed
-            pass
+    return ip_string, offset
 
-        r_type = response[offset:offset+2]
-        offset += 2 #TYPE
-        offset += 2 #CLASS
-        offset += 4 #TTL
-
-        rdlength = response[offset:offset + 2]
-        offset += 2 #RDLENGTH
-
-        if (struct.unpack("!H", r_type)[0]) == 1:
-            #rdata contains an A record
-            ip_bytes = response[offset:offset+4]
-            ip_string = ".".join(str(i) for i in ip_bytes)
-            break
-    
-    #print(f"AUTHORITATIVE IP: {ip_string}")
-
-
-
-    #-------------AUTHORITATIVE-----------
-
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.settimeout(10.0)
-    sock.sendto(packet, (ip_string, DNS_SERVER_PORT))
-    response, client = sock.recvfrom(PACKET_SIZE)
-
-    
-    transaction_id, flags, question_count, answer_count, authority_count, additional_rr_count = struct.unpack("!HHHHHH", response[:12])
-
-    offset = 12
-    q_section_len = len(q_name) + 4
-
-    offset = q_section_len + offset
-    #print(answer_count)
-
-    ip_string = ""
-    if response[offset] == 192:
-        #Compressed
-        offset += 2
-    else:
-        #not compressed
-        pass
-
-    r_type = response[offset:offset+2]
-    offset += 2 #TYPE
-    offset += 2 #CLASS
-    offset += 4 #TTL
-
-    rdlength = response[offset:offset + 2]
-    offset += 2 #RDLENGTH
-
-    if (struct.unpack("!H", r_type)[0]) == 1:
-        #rdata contains an A record
-        ip_bytes = response[offset:offset+4]
-        ip_string = ".".join(str(i) for i in ip_bytes)
-    
-    print(ip_string)
-
-    """
-    Create an HTTP request to the domain using the resolved IP address: Use the connect(),
-    sendall(), and recv() methods for this TCP connection and create your own HTTP request
-    using socket library again. Measure and report the RTT For this interaction as well.
-    """
-
+def send_http_request(ip_string, domain):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(10.0)
     sock.connect((ip_string, HTTP_PORT))
 
     request = f"GET / HTTP/1.1\r\nHost: {domain}\r\nConnection: close\r\n\r\n"
     sock.sendall(request.encode())
-    response, client = sock.recvfrom(PACKET_SIZE)
+    response = sock.recv(PACKET_SIZE)
 
+    return response
+
+def solve(domain):
+    #-------------ROOT-----------
+    packet, q_name = build_dns_packet(domain)
+    response = send_dns_packet(packet, ROOT_SERVERS[0])
+    transaction_id, flags, question_count, answer_count, authority_count, additional_rr_count = struct.unpack("!HHHHHH", response[:12])
+    offset = 12 + len(q_name) + 4 
+
+    _, offset = parse_dns_records(response, offset, authority_count) # No IP in the authority section
+    tld_ip_string, offset = parse_dns_records(response, offset, additional_rr_count)
+
+    if not tld_ip_string:
+        raise Exception("Did not find TLD IP address")
+    
+    print(f"TLD IP: {tld_ip_string}")
+
+    #-------------TLD-----------
+
+    packet, q_name = build_dns_packet(domain)
+    response = send_dns_packet(packet, tld_ip_string)
+    transaction_id, flags, question_count, answer_count, authority_count, additional_rr_count = struct.unpack("!HHHHHH", response[:12])
+    offset = 12 + len(q_name) + 4 
+
+    _, offset = parse_dns_records(response, offset, authority_count) # No IP in the authority section
+    auth_ip_string, offset = parse_dns_records(response, offset, additional_rr_count)
+
+    if not auth_ip_string:
+        raise Exception("Did not find authoritative IP address")
+
+    print(f"AUTHORITATIVE IP: {auth_ip_string}")
+
+    #-------------AUTHORITATIVE-----------
+
+    packet, q_name = build_dns_packet(domain)
+    response = send_dns_packet(packet, auth_ip_string)
+    transaction_id, flags, question_count, answer_count, authority_count, additional_rr_count = struct.unpack("!HHHHHH", response[:12])
+    offset = 12 + len(q_name) + 4 
+
+    final_ip_string, offset = parse_dns_records(response, offset, answer_count) # No IP in the authority section
+
+    if not final_ip_string:
+        raise Exception("Did not find final IP address")
+
+    print(f"FINAL IP: {final_ip_string}")
+
+    #-------------HTTP REQUEST-----------
+    response = send_http_request(final_ip_string, domain)
     print(response)
 
 
@@ -306,7 +215,9 @@ def solve(domain):
     pass
 
 if __name__ == '__main__':
+    if len(sys.argv) != 2:
+        print("Incorrect number of args. Expected ./DNS_client_AtticusWong_RichardZhang.py <domain>")
+        sys.exit(1)
     domain = sys.argv[1]
     solve(domain)
-    pass
 
