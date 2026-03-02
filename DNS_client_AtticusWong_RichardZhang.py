@@ -18,6 +18,8 @@ m.root-servers.net	202.12.27.33, 2001:dc3::35	WIDE Project
 import socket
 import sys
 import struct
+from collections import defaultdict
+import time
 
 ROOT_SERVERS = [
     "198.41.0.4",
@@ -62,15 +64,18 @@ def build_dns_packet(domain):
     return packet, q_name
 
 def send_dns_packet(packet, dns_ip):
+    start_time = time.time()
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(10.0)
     sock.sendto(packet, (dns_ip, DNS_SERVER_PORT))
 
     response, client = sock.recvfrom(PACKET_SIZE)
-    return response
+    end_time = time.time()
+    rtt = end_time - start_time
+    return response, rtt
 
 def parse_dns_records(response, offset, count):
-    records = {}
+    records = defaultdict(list)
     ip_string = ""
     for i in range(count):
         if response[offset] >= 192:
@@ -104,8 +109,8 @@ def parse_dns_records(response, offset, count):
             ip_string = ".".join(str(i) for i in ip_bytes)
             r_data = ip_string
             offset += rdlength_val
-            records[R_TYPE_VAL_TO_NAME[r_type_val]] = r_data
-        elif r_type_val == 2:
+            records[R_TYPE_VAL_TO_NAME[r_type_val]].append(r_data)
+        elif r_type_val == 2 or r_type_val == 5:
             name = ""
             ns_offset = offset
             while response[ns_offset] != 0:
@@ -120,7 +125,14 @@ def parse_dns_records(response, offset, count):
             name = name.rstrip(".")
             r_data = name
             offset += rdlength_val
-            records[R_TYPE_VAL_TO_NAME[r_type_val]] = r_data
+            records[R_TYPE_VAL_TO_NAME[r_type_val]].append(r_data)
+        elif r_type_val == 28:
+            #AAAA record
+            ip_bytes = response[offset:offset+16]
+            ip_string = ".".join(str(i) for i in ip_bytes)
+            r_data = ip_string
+            offset += rdlength_val
+            records[R_TYPE_VAL_TO_NAME[r_type_val]].append(r_data)
         else:
             offset += rdlength_val
     
@@ -141,49 +153,76 @@ def send_http_request(ip_string, domain):
 def get_final_ip(domain):
     #-------------ROOT-----------
     packet, q_name = build_dns_packet(domain)
-    response = send_dns_packet(packet, ROOT_SERVERS[0])
+    response, root_rtt = send_dns_packet(packet, ROOT_SERVERS[0])
     transaction_id, flags, question_count, answer_count, authority_count, additional_rr_count = struct.unpack("!HHHHHH", response[:12])
     offset = 12 + len(q_name) + 4 
 
-    _, offset = parse_dns_records(response, offset, authority_count) # No IP in the authority section
-    records, offset = parse_dns_records(response, offset, additional_rr_count)
+    root_auth_records, offset = parse_dns_records(response, offset, authority_count) # No IP in the authority section
+    root_addl_records, offset = parse_dns_records(response, offset, additional_rr_count)
     
     #print(f"TLD IP: {tld_ip_string}")
 
     #-------------TLD-----------
 
     packet, q_name = build_dns_packet(domain)
-    response = send_dns_packet(packet, records["A"])
+    response, tld_rtt = send_dns_packet(packet, root_addl_records["A"][0])
     transaction_id, flags, question_count, answer_count, authority_count, additional_rr_count = struct.unpack("!HHHHHH", response[:12])
     offset = 12 + len(q_name) + 4 
 
-    authority_records, offset = parse_dns_records(response, offset, authority_count) # No IP in the authority section
-    additional_records, offset = parse_dns_records(response, offset, additional_rr_count)
+    tld_auth_records, offset = parse_dns_records(response, offset, authority_count) # No IP in the authority section
+    tld_addl_records, offset = parse_dns_records(response, offset, additional_rr_count)
 
-    if "A" not in additional_records and "NS" in authority_records:
+    #print(authority_records)
+
+    if "A" not in tld_addl_records and "NS" in tld_auth_records:
         #recursively query the NS domain
         # ns0229.secondary.cloudflare.com
-        print(f"name server found {authority_records['NS']}")
-        return get_final_ip(authority_records["NS"])
-    
-    auth_ip = additional_records["A"]
+        print(f"name servers found {tld_auth_records['NS']}")
+        return get_final_ip(tld_auth_records["NS"][0])
+
+    auth_ip = tld_addl_records["A"][0]
+
 
 
     #-------------AUTHORITATIVE-----------
     #print(records)
     packet, q_name = build_dns_packet(domain)
-    response = send_dns_packet(packet, auth_ip)
+    response, auth_rtt = send_dns_packet(packet, auth_ip)
     transaction_id, flags, question_count, answer_count, authority_count, additional_rr_count = struct.unpack("!HHHHHH", response[:12])
     offset = 12 + len(q_name) + 4 
 
-    answer_records, offset = parse_dns_records(response, offset, answer_count)
-    final_ip = answer_records["A"]
+    auth_ans_records, offset = parse_dns_records(response, offset, answer_count)
+
+    combined_records = defaultdict(list)
+    for record_name in ["A", "NS", "CNAME", "AAAA"]:
+        if record_name in root_auth_records:
+            for val in root_addl_records[record_name]:
+                combined_records[record_name].append(val)
+        if record_name in root_addl_records:
+            for val in root_addl_records[record_name]:
+                combined_records[record_name].append(val)
+        if record_name in tld_addl_records:
+            for val in tld_addl_records[record_name]:
+                combined_records[record_name].append(val)
+        if record_name in tld_auth_records:
+            for val in tld_auth_records[record_name]:
+                combined_records[record_name].append(val)
+        if record_name in auth_ans_records:
+            for val in auth_ans_records[record_name]:
+                combined_records[record_name].append(val)
+        
+    print(f"root rtt = {root_rtt},\ntld rtt = {tld_rtt},\nauth rtt = {auth_rtt}\n\n")
+    
+    print(combined_records)
+
+
+    final_ip = auth_ans_records["A"][0]
     return final_ip
 
 def solve(domain):
     final_ip = get_final_ip(domain)
     response = send_http_request(final_ip, domain)
-    print(response)
+    #print(response)
 
 
 
