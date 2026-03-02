@@ -69,35 +69,6 @@ def send_dns_packet(packet, dns_ip):
     response, client = sock.recvfrom(PACKET_SIZE)
     return response
 
-
-def parse_name(response, offset):
-    """Parse a domain name from DNS response, handling compression."""
-    labels = []
-    original_offset = offset
-    
-    while True:
-        length = response[offset]
-        
-        # Check for compression pointer (0xC0 = 192)
-        if length >= 192:
-            # Pointer format: 11xxxxxx xxxxxxxx (14-bit offset)
-            pointer = ((length & 0x3F) << 8) | response[offset + 1]
-            # Recursively parse the name at the pointer location
-            name, _ = parse_name(response, pointer)
-            labels.append(name)
-            offset += 2
-            break
-        elif length == 0:
-            offset += 1
-            break
-        else:
-            # Regular label
-            labels.append(response[offset + 1:offset + 1 + length].decode('latin-1'))
-            offset += 1 + length
-    
-    print('.'.join(labels))
-    return '.'.join(labels), offset
-
 def parse_dns_records(response, offset, count):
     records = {}
     ip_string = ""
