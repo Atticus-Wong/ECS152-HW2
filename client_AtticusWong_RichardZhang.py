@@ -3,15 +3,10 @@ import sys
 import json
 
 SERVER_HOST = "127.0.0.1"
-SERVER_PORT = 8005
+SERVER_PORT = 7000
 
-PROXY_SERVER_PORT = 8004
+PROXY_SERVER_PORT = 7001
 
-
-class Data:
-    server_ip: str
-    server_port: int
-    message: str
 
 if __name__ == '__main__':
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -34,20 +29,21 @@ if __name__ == '__main__':
     s.connect((SERVER_HOST, PROXY_SERVER_PORT))
     s.sendall(json_data.encode('utf-8'))
     print("----------------------------")
-    print("Sent to proxy:") 
+    print("Sent to Proxy:") 
     print("----------------------------")
     print("data = {")
     print(f"\"server_ip\": \"{data['server_ip']}\"")
-    print(f"\"server_port\": \"{data['server_port']}\"")
+    print(f"\"server_port\": {data['server_port']}")
     print(f"\"message\": \"{data['message']}\"")
     print("}")
 
     # receive response from the proxy
     final_message = s.recv(1024).decode()
     print("----------------------------")
-    print("Received from proxy:") 
+    print("Received from Proxy:") 
     print("----------------------------")
-    print(final_message)
+    print(f"\"{final_message}\"")
+    s.close()
 
 
 

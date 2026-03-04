@@ -1,7 +1,7 @@
 import socket
 
 SERVER_HOST = "127.0.0.1"
-SERVER_PORT = 8005
+SERVER_PORT = 7000
 
 if __name__ == '__main__':
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -16,7 +16,7 @@ if __name__ == '__main__':
         data = clientsocket.recv(1024).decode()
 
         print("----------------------------")
-        print("Received from proxy:") 
+        print("Received from Proxy:") 
         print("----------------------------")
         print(f"\"{data}\"")
 
@@ -29,14 +29,13 @@ if __name__ == '__main__':
         elif data.lower() == "pong":
             ans = "Ping"
         else:
-            print(data[::-1])
             ans = data[::-1]
         
 
         print("----------------------------")
-        print("Sent to proxy:") 
+        print("Sent to Proxy:") 
         print("----------------------------")
         print(f"\"{ans}\"")
 
         clientsocket.send(ans.encode())
-
+        clientsocket.close()

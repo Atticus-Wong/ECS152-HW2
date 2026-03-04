@@ -2,13 +2,12 @@ import socket
 import json
 
 SERVER_HOST = "127.0.0.1"
-SERVER_PORT = 8005
+SERVER_PORT = 7000
+PROXY_SERVER_PORT = 7001
 
-PROXY_SERVER_PORT = 8004
 
-
-# sends data to server on port 8005
-# receives data from server on port 8004
+# sends data to server on port 7000
+# receives data from server on port 7001
 
 # has to 
 blocklist = [
@@ -31,11 +30,11 @@ if __name__ == '__main__':
         data = json.loads(raw_data)
 
         print("----------------------------")
-        print("Received from client:") 
+        print("Received from Client:") 
         print("----------------------------")
         print("data = {")
         print(f"\"server_ip\": \"{data['server_ip']}\"")
-        print(f"\"server_port\": \"{data['server_port']}\"")
+        print(f"\"server_port\": {data['server_port']}")
         print(f"\"message\": \"{data['message']}\"")
         print("}")
 
@@ -43,27 +42,31 @@ if __name__ == '__main__':
         
         if f"{data['server_ip']}" in blocklist:
             clientsocket.sendall("Blocklist Error".encode('utf-8'))
+            clientsocket.close()
         else:
             # opens a port to the server and sends data to the server
             server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-            server.connect((SERVER_HOST, SERVER_PORT))
+            server.connect((data['server_ip'], data['server_port']))
             server.sendall(data["message"].encode('utf-8'))
             print("----------------------------")
-            print("Sent to server:") 
+            print("Sent to Server:") 
             print("----------------------------")
             print(f"\"{data['message']}\"")
 
             # receive data from server
             new_data = server.recv(1024).decode()
             print("----------------------------")
-            print("Received from server:") 
+            print("Received from Server:") 
             print("----------------------------")
             print(f"\"{new_data}\"")
 
             clientsocket.sendall(new_data.encode('utf-8'))
 
             print("----------------------------")
-            print("Sent to client:") 
+            print("Sent to Client:") 
             print("----------------------------")
             print(f"\"{new_data}\"")
+
+            server.close()
+            clientsocket.close()
