@@ -170,7 +170,16 @@ def get_final_ip(domain):
     if response is None:
         raise Exception("All root servers timed out")
     transaction_id, flags, question_count, answer_count, authority_count, additional_rr_count = struct.unpack("!HHHHHH", response[:12])
-    offset = 12 + len(q_name) + 4 
+    offset = 12
+    while response[offset] != 0:
+        word_len = response[offset]
+        offset += 1 + word_len
+    offset += 1
+
+    q_type = struct.unpack("!H", response[offset:offset+2])[0]
+    offset += 2
+    q_class = struct.unpack("!H", response[offset:offset+2])[0]
+    offset += 2
 
     root_ans_records, offset = parse_dns_records(response, offset, answer_count)
     root_auth_records, offset = parse_dns_records(response, offset, authority_count) # No IP in the authority section
@@ -199,7 +208,16 @@ def get_final_ip(domain):
     if response is None:
         raise Exception("TLD server timed out")
     transaction_id, flags, question_count, answer_count, authority_count, additional_rr_count = struct.unpack("!HHHHHH", response[:12])
-    offset = 12 + len(q_name) + 4 
+    offset = 12
+    while response[offset] != 0:
+        word_len = response[offset]
+        offset += 1 + word_len
+    offset += 1
+
+    q_type = struct.unpack("!H", response[offset:offset+2])[0]
+    offset += 2
+    q_class = struct.unpack("!H", response[offset:offset+2])[0]
+    offset += 2
 
     tld_ans_records, offset = parse_dns_records(response, offset, answer_count)
     tld_auth_records, offset = parse_dns_records(response, offset, authority_count) # No IP in the authority section
@@ -224,7 +242,15 @@ def get_final_ip(domain):
         if response is None:
             raise Exception("Nameserver query timed out")
         transaction_id, flags, question_count, answer_count, authority_count, additional_rr_count = struct.unpack("!HHHHHH", response[:12])
-        offset = 12 + len(q_name) + 4 
+        offset = 12
+        while response[offset] != 0:
+            word_len = response[offset]
+            offset += 1 + word_len
+        offset += 1
+        q_type = struct.unpack("!H", response[offset:offset+2])[0]
+        offset += 2
+        q_class = struct.unpack("!H", response[offset:offset+2])[0]
+        offset += 2
         auth_ans_records, offset = parse_dns_records(response, offset, answer_count)
         print(f"RTT: {auth_rtt} ms")
         final_ip = auth_ans_records["A"][0]
@@ -243,7 +269,16 @@ def get_final_ip(domain):
     if response is None:
         raise Exception("Authoritative server timed out")
     transaction_id, flags, question_count, answer_count, authority_count, additional_rr_count = struct.unpack("!HHHHHH", response[:12])
-    offset = 12 + len(q_name) + 4 
+    offset = 12
+    while response[offset] != 0:
+        word_len = response[offset]
+        offset += 1 + word_len
+    offset += 1
+
+    q_type = struct.unpack("!H", response[offset:offset+2])[0]
+    offset += 2
+    q_class = struct.unpack("!H", response[offset:offset+2])[0]
+    offset += 2
 
     auth_ans_records, offset = parse_dns_records(response, offset, answer_count)
 
