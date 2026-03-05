@@ -26,7 +26,7 @@ R_TYPE_VAL_TO_NAME = {
     1: "A",
     2: "NS",
     5: "CNAME",
-    28: "AAAA"
+    28: "AAAA",
 }
 
 
@@ -70,7 +70,6 @@ def send_dns_packet(packet, dns_ip):
 
 def parse_dns_records(response, offset, count):
     records = defaultdict(list)
-    ip_string = ""
     for i in range(count):
         if response[offset] >= 192:
             offset += 2
@@ -100,6 +99,7 @@ def parse_dns_records(response, offset, count):
             ip_string = ".".join(str(i) for i in ip_bytes)
             r_data = ip_string
             offset += rdlength_val
+            print_record(R_TYPE_VAL_TO_NAME[r_type_val], r_data)
             records[R_TYPE_VAL_TO_NAME[r_type_val]].append(r_data)
         elif r_type_val == 2 or r_type_val == 5:
             name_groups = []
@@ -119,6 +119,7 @@ def parse_dns_records(response, offset, count):
             name = ".".join(name for name in name_groups)
             r_data = name
             offset += rdlength_val
+            print_record(R_TYPE_VAL_TO_NAME[r_type_val], r_data)
             records[R_TYPE_VAL_TO_NAME[r_type_val]].append(r_data)
         elif r_type_val == 28:
             #AAAA record
@@ -129,23 +130,15 @@ def parse_dns_records(response, offset, count):
             ip_string = ":".join(hex for hex in ipv6_groups)
             r_data = ip_string
             offset += rdlength_val
+            print_record(R_TYPE_VAL_TO_NAME[r_type_val], r_data)
             records[R_TYPE_VAL_TO_NAME[r_type_val]].append(r_data)
         else:
             offset += rdlength_val
     
     return records, offset
 
-def print_records(sections):
-    combined_records = defaultdict(list)
-    for record_name in ["A", "NS", "CNAME", "AAAA"]:
-        for section in sections:
-            if record_name in section:
-                for val in section[record_name]:
-                    combined_records[record_name].append(val)
-
-    for record_name in combined_records:
-        for record in combined_records[record_name]:
-            print(f"{record_name} : {record}")
+def print_record(record_name, record_data):
+    print(f"{record_name} : {record_data}")
 
 def send_http_request(ip_string, domain):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -156,7 +149,7 @@ def send_http_request(ip_string, domain):
     print("--------------------------------------------")
     print(f"Making HTTP request to {ip_string}")
     print("--------------------------------------------")
-    sock.sendall(request.encode())
+    sock.sendall(request.encode("utf-8"))
     response = sock.recv(PACKET_SIZE)
     end_time = time.time()
     sock.close()
@@ -179,11 +172,19 @@ def get_final_ip(domain):
     transaction_id, flags, question_count, answer_count, authority_count, additional_rr_count = struct.unpack("!HHHHHH", response[:12])
     offset = 12 + len(q_name) + 4 
 
+    root_ans_records, offset = parse_dns_records(response, offset, answer_count)
     root_auth_records, offset = parse_dns_records(response, offset, authority_count) # No IP in the authority section
     root_addl_records, offset = parse_dns_records(response, offset, additional_rr_count)
+
+    if "A" in root_ans_records:
+        final_ip = root_ans_records["A"][0]
+        print(f"RTT: {root_rtt} ms")
+        return final_ip
+    
+    #print(f"\n{root_addl_records}\n")
+
     tld_ip_string = root_addl_records["A"][0]
 
-    print_records([root_auth_records, root_addl_records])
     print(f"RTT: {root_rtt} ms")
     #print(f"TLD IP: {tld_ip_string}")
 
@@ -195,13 +196,20 @@ def get_final_ip(domain):
     print(f"Querying {tld_ip_string} for {domain}")
     print("--------------------------------------------")
     response, tld_rtt = send_dns_packet(packet, tld_ip_string)
+    if response is None:
+        raise Exception("TLD server timed out")
     transaction_id, flags, question_count, answer_count, authority_count, additional_rr_count = struct.unpack("!HHHHHH", response[:12])
     offset = 12 + len(q_name) + 4 
 
+    tld_ans_records, offset = parse_dns_records(response, offset, answer_count)
     tld_auth_records, offset = parse_dns_records(response, offset, authority_count) # No IP in the authority section
     tld_addl_records, offset = parse_dns_records(response, offset, additional_rr_count)
 
-    print_records([tld_auth_records, tld_addl_records])
+    if "A" in tld_ans_records:
+        final_ip = tld_ans_records["A"][0]
+        print(f"RTT: {tld_rtt} ms")
+        return final_ip
+
     print(f"RTT: {tld_rtt} ms")
 
     if "A" not in tld_addl_records and "NS" in tld_auth_records:
@@ -213,10 +221,11 @@ def get_final_ip(domain):
         print(f"Querying {ns_ip} for {domain}")
         print("--------------------------------------------")
         response, auth_rtt = send_dns_packet(packet, ns_ip)
+        if response is None:
+            raise Exception("Nameserver query timed out")
         transaction_id, flags, question_count, answer_count, authority_count, additional_rr_count = struct.unpack("!HHHHHH", response[:12])
         offset = 12 + len(q_name) + 4 
         auth_ans_records, offset = parse_dns_records(response, offset, answer_count)
-        print_records([auth_ans_records])
         print(f"RTT: {auth_rtt} ms")
         final_ip = auth_ans_records["A"][0]
         return final_ip
@@ -231,14 +240,17 @@ def get_final_ip(domain):
     #print(records)
     packet, q_name = build_dns_packet(domain)
     response, auth_rtt = send_dns_packet(packet, auth_ip_string)
+    if response is None:
+        raise Exception("Authoritative server timed out")
     transaction_id, flags, question_count, answer_count, authority_count, additional_rr_count = struct.unpack("!HHHHHH", response[:12])
     offset = 12 + len(q_name) + 4 
 
     auth_ans_records, offset = parse_dns_records(response, offset, answer_count)
 
-    print_records([auth_ans_records])
     print(f"RTT: {auth_rtt} ms")
 
+    if "A" not in auth_ans_records and "CNAME" in auth_ans_records:
+        return get_final_ip(auth_ans_records["CNAME"][0])
 
     final_ip_string = auth_ans_records["A"][0]
     return final_ip_string
