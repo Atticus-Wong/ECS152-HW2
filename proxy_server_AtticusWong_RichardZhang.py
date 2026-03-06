@@ -11,7 +11,7 @@ PROXY_SERVER_PORT = 7001
 
 # has to 
 blocklist = [
-    # "127.0.0.1",
+    #"127.0.0.1",
     "192.168.0.1"
 ]
 if __name__ == '__main__':
@@ -41,6 +41,10 @@ if __name__ == '__main__':
         # logic for the ip blocklist here
         
         if f"{data['server_ip']}" in blocklist:
+            print("----------------------------")
+            print("Sent to Client:")
+            print("----------------------------")
+            print("Blocklist Error")
             clientsocket.sendall("Blocklist Error".encode('utf-8'))
             clientsocket.close()
         else:
