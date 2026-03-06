@@ -3,6 +3,7 @@ import sys
 import struct
 from collections import defaultdict
 import time
+import random
 
 ROOT_SERVERS = [
     "198.41.0.4",
@@ -31,7 +32,7 @@ R_TYPE_VAL_TO_NAME = {
 
 
 def build_dns_packet(domain):
-    transaction_id = 0xFFFF
+    transaction_id = random.randint(0, 0xFFFF)
     flags = 0x0000
     question_count = 0x0001
     answer_count = 0x0000
@@ -40,11 +41,11 @@ def build_dns_packet(domain):
     header = struct.pack("!HHHHHH", transaction_id, flags, question_count, answer_count, authority_count, additional_rr_count)
     
     words = domain.split('.')
-    q_name = b""
+    parts = []
     for word in words:
-        q_name += struct.pack("B", len(word))
-        q_name += word.encode()
-    q_name += b"\x00"
+        parts.append(struct.pack("B", len(word)) + word.encode())
+    parts.append(b"\x00")
+    q_name = b"".join(parts)
 
     q_type = 0x0001
     q_class = 0x0001
@@ -66,7 +67,8 @@ def send_dns_packet(packet, dns_ip):
         sock.close()
         return None, 0
     rtt = (end_time - start_time) * 1000 #in ms
-    return response, rtt
+    rtt_rounded = round(rtt, 2)
+    return response, rtt_rounded
 
 def parse_dns_records(response, offset, count):
     records = defaultdict(list)
@@ -154,7 +156,8 @@ def send_http_request(ip_string, domain):
     end_time = time.time()
     sock.close()
     rtt = (end_time - start_time) * 1000
-    return response, rtt
+    rtt_rounded = round(rtt, 2)
+    return response, rtt_rounded
 
 def get_final_ip(domain):
     #-------------ROOT-----------
